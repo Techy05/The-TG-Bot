@@ -23,7 +23,7 @@ def sync(self, func, *args, **kwargs):
     return asyncio.get_event_loop().create_task(func(*args, **kwargs))
 
 
-def _events(pattern=None, allow_sudo=False, incoming=False, func=None, **args):
+def _events(pattern=None, allow_sudo=False, incoming=False, forwards=False, func=None, **args):
     """
     Simpler function to handle events without having to import telethon.events
     and also enables command_handler functionality
@@ -33,10 +33,14 @@ def _events(pattern=None, allow_sudo=False, incoming=False, func=None, **args):
         args["func"] = func
     if pattern is not None:
         args["pattern"] = re.compile(ENV.COMMAND_HANDLER + pattern)
-    if allow_sudo:
-        args["from_users"] = list(ENV.SUDO_USERS)
+    if forwards is True:
+        args["forwards"] = None
+    else:
+        args["forwards"] = False
     if incoming:
         args["incoming"] = True
+    elif allow_sudo:
+        args["from_users"] = ENV.SUDO_USERS + ['me']
     else:
         args["outgoing"] = True
     args["blacklist_chats"] = True

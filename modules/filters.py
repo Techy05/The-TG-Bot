@@ -11,14 +11,14 @@ client.storage.LastTrigger = {} # spam protection
 async def filter(event):
     filters = get_filter(event.chat_id)
     for term in filters:
-        if term.trigger in event.raw_text.lower() and not last_used(term.trigger):
-            media = await client.get_messages(ENV.LOGGER_GROUP, ids=int(term.file))
+        if term.trigger in event.message.lower() and not last_used(term.trigger):
+            media = await client.get_messages(ENV.LOGGER_GROUP, ids=int(term.file)) if term.file else None
             await event.reply(
                 term.content, 
                 file=media, 
                 silent=True
             )
-            client.storage.LastTrigger[term.trigger] = datetime.now()
+        client.storage.LastTrigger[term.trigger] = datetime.now()
             
 
 @client.on(events(pattern="filters"))
@@ -41,19 +41,17 @@ async def addfilter(event):
         return
     reply = await event.get_reply_message()
     input_str = event.pattern_match.group(1)
+    file = None
     if input_str and not reply:
         if "\"" in input_str:
-            split = input_str.split("\"", maxsplit=2)
-            trigger = split[1].strip()
-            content = split[2].strip()
+            split = input_str.lstrip("\"").split("\"", maxsplit=1)
         else:
             split = input_str.split(maxsplit=1)
-            trigger = split[0]
-            content = split[1]
+        trigger = split[0].strip()
+        content = split[1].strip()
     elif input_str and reply:
         trigger = input_str
         content = reply.text
-        file = None
         if reply.media:
             file = await log(reply.media, trigger)
     else:
@@ -72,7 +70,7 @@ async def stopfilter(event):
         if input_str == "--all":
             rmrf_filter(event.chat_id)
             for term in get_filter(event.chat_id):
-                file = await client.get_messages(ENV.LOGGER_GROUP, ids=int(term.file))
+                file = await client.get_messages(ENV.LOGGER_GROUP, ids=int(term.file)) if term.file else None
                 if file: await file.delete()
             return await event.edit(f"**All filters have been stopped in** `{title}`")
         trigger = input_str.lower()
@@ -80,7 +78,7 @@ async def stopfilter(event):
         for term in get_filter(event.chat_id):
             if term.trigger == trigger:
                 rm_filter(event.chat_id, trigger)
-                file = await client.get_messages(ENV.LOGGER_GROUP, ids=int(term.file))
+                file = await client.get_messages(ENV.LOGGER_GROUP, ids=int(term.file)) if term.file else None
                 if file: await file.delete()
                 msg = f"**Stopped filtering** \"`{input_str}`\" **in {title}**"
     else:
@@ -98,7 +96,6 @@ def last_used(term):
     if last:
         now = datetime.now()
         if (now - last).seconds < 15:
-            client.storage.LastTrigger[term] = datetime.now()
             return True
         else:
             return False
@@ -130,7 +127,7 @@ ENV.HELPER.update({
 \n•  To set a one-word filter:\
 \n__.addfilter hello Hey, there!__\
 \n\n•  To set a multi-word filter:\
-\n__.addfilter \"where are you\" I'm sleeping on Jupiter right now.__\
+\n__.addfilter \"where are you\" I'm wandering on Jupiter right now.__\
 \n\n•  To set a filter while replying: (quotes are not required)\
 \n__.addfilter how to update The-TG-Bot  (as a reply to the guide)__\
 "

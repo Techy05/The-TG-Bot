@@ -26,9 +26,6 @@ if ENV.DB_URI is None:
     sys.exit(1)
 
 
-if len(ENV.SUDO_USERS) >= 0:
-    ENV.SUDO_USERS.add("me")
-
 if ENV.SESSION is not None:
     session_name = str(ENV.SESSION)
     userbot = Userbot(

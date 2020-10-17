@@ -18,7 +18,7 @@ class ENV(object):
     ANTI_PM_SPAM = bool(os.environ.get("ANTI_PM_SPAM", False))
     MAX_PM_FLOOD = int(os.environ.get("MAX_PM_FLOOD", 5))
     COMMAND_HANDLER = os.environ.get("COMMAND_HANDLER", "\.")
-    SUDO_USERS = set(int(x) for x in os.environ.get("SUDO_USERS", "").split())
+    SUDO_USERS = os.environ.get("SUDO_USERS", "").split()
     BLACK_LIST = set(int(x) for x in os.environ.get(
         "BLACK_LIST", "").split())
     DRIVE_CLIENT_ID = os.environ.get("DRIVE_CLIENT_ID", None)
@@ -32,6 +32,8 @@ class ENV(object):
     IPABOX_FOLDER = os.environ.get("IPABOX_FOLDER", None)
     HEROKU_API_KEY = os.environ.get("HEROKU_API_KEY", None)
     TG_APP_NAME = os.environ.get("TG_APP_NAME", None)
+    BOT_TOKEN = os.environ.get("BOT_TOKEN", None)
+    BOT_USERNAME = os.environ.get("BOT_USERNAME", None)
     STICKER_PACK = os.environ.get("STICKER_PACK", None)
     UNLOCKED_CHATS = os.environ.get("UNLOCKED_CHATS", [])
 

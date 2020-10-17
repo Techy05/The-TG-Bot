@@ -29,7 +29,7 @@ async def get(event):
     notes = get_notes(event.chat_id)
     for note in notes:
         if notename == note.keyword:
-            file = await client.get_messages(ENV.LOGGER_GROUP, ids=int(note.file))
+            file = await client.get_messages(ENV.LOGGER_GROUP, ids=int(note.file)) if note.file else None
             await client.send_message(
                 event.chat_id, 
                 note.content, 
@@ -71,7 +71,7 @@ async def clear(event):
     status = f"**Note {notename} not found.**"
     for note in notes:
         if notename == note.keyword:
-            file = await client.get_messages(ENV.LOGGER_GROUP, ids=int(note.file))
+            file = await client.get_messages(ENV.LOGGER_GROUP, ids=int(note.file)) if note.file else None
             if file: await file.delete()
             rm_note(event.chat_id, notename)
             status = f"**Note** `{notename}` **cleared successfully**"
@@ -84,10 +84,9 @@ async def clearall(event):
         return
     await event.edit("**Purging all notes.**")
     for note in get_notes(event.chat_id):
-        file = await client.get_messages(ENV.LOGGER_GROUP, ids=int(note.file))
+        file = await client.get_messages(ENV.LOGGER_GROUP, ids=int(note.file)) if note.file else None
         if file: await file.delete()
     rm_all_notes(str(event.chat_id))
-    time.sleep(1)
     await event.edit("**All notes have been purged successfully.**")
     time.sleep(2)
     await event.delete()

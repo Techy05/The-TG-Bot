@@ -1,3 +1,4 @@
+# For The-TG-Bot
 
 import asyncio
 from datetime import datetime
@@ -14,6 +15,7 @@ async def handler(event):
     grps = 0
     supergrps = 0
     chnls = 0
+    admin = 0
     bots = 0
     dialogs = await client.get_dialogs(
         limit=None,
@@ -28,21 +30,23 @@ async def handler(event):
                 pm += 1
         elif type(currrent_entity) is Chat:
             grps += 1
+            if d.entity.admin_rights:
+                admin += 1
         elif type(currrent_entity) is Channel:
             if currrent_entity.broadcast:
                 chnls += 1
             else:
                 supergrps += 1
+            if d.entity.admin_rights:
+                admin += 1
         else:
-            print(d)
+            print(d.name)
     end = datetime.now()
     ms = (end - start).seconds
-    await event.edit(f"**Your stats obtained in {ms} second(s).\nYou have {pm} private messages.\nYou are in {grps} groups.\nYou are in {supergrps} super groups.\nYou are in {chnls} channels.\nYou have chats with {bots} bots.**")
+    await event.edit(f"**Your stats obtained in {ms} second(s).\nYou have {pm} private messages.\nYou are in {grps} groups.\nYou are in {supergrps} super groups.\nYou are in {chnls} channels.\nYou are admin in {admin} groups & channels.\nYou have chats with {bots} bots.**")
 
 
-ENV.HELPER.update({
-    "stat": "\
-```.stat```\
+ENV.HELPER.update({"stat": "\
+`.stat`\
 \nUsage: Print your own use statistics.\
-"
-})
+"})

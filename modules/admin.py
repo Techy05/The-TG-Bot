@@ -3,8 +3,8 @@
 
 from telethon.tl.functions.users import GetFullUserRequest
 
-SUDO_STR = "**That guy is my friend, not going to touch him!**"
 NO_USER = "Who do you want me to {0}?!"
+
 
 @client.on(events(pattern="promote ?(.*)"))
 async def handler(event):
@@ -15,19 +15,17 @@ async def handler(event):
     if reply:
         user = reply.from_id
         rank = input_str if input_str else None
-    else:
-        if input_str:
-            user = input_str.split()[0]
-            try:
-                rank = input_str.split()[1]
-            except:
-                rank = None
-        else:
-            return await event.edit("`You deserve a demotion!`")
+    elif input_str and not reply:
+        user = input_str.split()[0]
+        try:
+            rank = input_str.split()[1]
+        except:
+            rank = None
+    else: return await event.edit("`You deserve a demotion!`")
     try:
         await client.edit_admin(event.chat_id, user,
             is_admin=True, title=rank, ban_users=False, add_admins=False)
-        await event.edit(f"`Say hello to` {await user_entity(user)}, `our new \"{rank}\"!`")
+        await event.edit(f"`Say hello to `{await user_entity(user)},` our new \"{rank}\"!`")
     except (Exception) as exc:
         await event.edit(str(exc))
 
@@ -36,16 +34,13 @@ async def handler(event):
     if event.fwd_from:
         return
     user = await get_user(event)
-    if not user:
+    if user is None: 
         return await event.edit(NO_USER.format("demote"))
-    elif user in ENV.SUDO_USERS:
-        return await event.edit(SUDO_STR)
-    else:
-        try:
-            await client.edit_admin(event.chat_id, user, is_admin=False)
-            await event.edit(f"`Oh boy,` {await user_entity(user)} `has been demoted!`")
-        except (Exception) as exc:
-            await event.edit(str(exc))
+    try:
+        await client.edit_admin(event.chat_id, user, is_admin=False)
+        await event.edit(f"`Oh boy, `{await user_entity(user)}` has been demoted!`")
+    except (Exception) as exc:
+        await event.edit(str(exc))
 
 
 @client.on(events(pattern="ban ?(.*)"))
@@ -53,30 +48,26 @@ async def handler(event):
     if event.fwd_from:
         return
     participant = await get_user(event)
-    if not participant:
+    if participant is None:
         return await event.edit(NO_USER.format("ban"))
-    elif participant in ENV.SUDO_USERS:
-        return await event.edit(SUDO_STR)
-    else:
-        try:
-            await client.edit_permissions(event.chat_id, participant, view_messages=False)
-            await event.edit(f"`Gone,` {await user_entity(participant)} `is gone!`")
-        except (Exception) as exc:
-            await event.edit(str(exc))
+    try:
+        await client.edit_permissions(event.chat_id, participant, view_messages=False)
+        await event.edit(f"`Gone, `{await user_entity(participant)}` is gone!`")
+    except (Exception) as exc:
+        await event.edit(str(exc))
 
 @client.on(events("unban ?(.*)"))
 async def handler(event):
     if event.fwd_from:
         return
     participant = await get_user(event)
-    if not participant:
+    if participant is None:
         return await event.edit(NO_USER.format("unban"))
-    else:
-        try:
-            await client.edit_permissions(event.chat_id, participant)
-            await event.edit(f"`Well,` {await user_entity(participant)} `can join now!`")
-        except (Exception) as exc:
-            await event.edit(str(exc))
+    try:
+        await client.edit_permissions(event.chat_id, participant)
+        await event.edit(f"`Well, `{await user_entity(participant)}` can join now!`")
+    except (Exception) as exc:
+        await event.edit(str(exc))
 
 
 @client.on(events("mute ?(.*)"))
@@ -84,30 +75,26 @@ async def handler(event):
     if event.fwd_from:
         return
     participant = await get_user(event)
-    if not participant:
+    if participant is None:
         return await event.edit(NO_USER.format("mute"))
-    elif participant in ENV.SUDO_USERS:
-        return await event.edit(SUDO_STR)
-    else:
-        try:
-            await client.edit_permissions(event.chat_id, participant, send_messages=False)
-            await event.edit(f"`Successfully taped` {await user_entity(participant)}!")
-        except (Exception) as exc:
-            await event.edit(str(exc))
+    try:
+        await client.edit_permissions(event.chat_id, participant, send_messages=False)
+        await event.edit(f"`Successfully taped `{await user_entity(participant)}!")
+    except (Exception) as exc:
+        await event.edit(str(exc))
 
 @client.on(events("unmute ?(.*)"))
 async def handler(event):
     if event.fwd_from:
         return
     participant = await get_user(event)
-    if not participant:
+    if participant is None:
         return await event.edit(NO_USER.format("unmute"))
-    else:
-        try:
-            await client.edit_permissions(event.chat_id, participant)
-            await event.edit(f"`Okay,` {await user_entity(participant)} `is no longer taped!`")
-        except (Exception) as exc:
-            await event.edit(str(exc))
+    try:
+        await client.edit_permissions(event.chat_id, participant)
+        await event.edit(f"`Okay, `{await user_entity(participant)}` is no longer taped!`")
+    except (Exception) as exc:
+        await event.edit(str(exc))
 
 
 @client.on(events("kick ?(.*)"))
@@ -115,19 +102,15 @@ async def handler(event):
     if event.fwd_from:
         return
     participant = await get_user(event)
-    if not participant:
+    if participant is None:
         return await event.edit(NO_USER.format("kick"))
-    elif participant == "me":
+    if participant == "me":
         await event.edit("`Sayonara, cruel world!`")
-        await client.kick_participant(event.chat_id, "me")
-    elif participant in ENV.SUDO_USERS:
-        return await event.edit(SUDO_STR)
-    else:
-        try:
-            await client.kick_participant(event.chat_id, participant)
-            await event.edit(f"{await user(participant)} `has been yeeted!`")
-        except (Exception) as exc:
-            await event.edit(str(exc))
+    try:
+        await client.kick_participant(event.chat_id, participant)
+        await event.edit(f"{await user(participant)}` has been yeeted!`")
+    except (Exception) as exc:
+        await event.edit(str(exc))
 
 
 @client.on(events("pin ?(.*)"))

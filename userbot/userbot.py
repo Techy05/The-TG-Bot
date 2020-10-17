@@ -42,12 +42,18 @@ class Userbot(TelegramClient):
             "api_id": 6,
             "api_hash": "eb06d4abfb49dc3eeb1aeb98ae0f581e",
             "device_model": "Userbot",
-            "app_version": "@The-TG-Bot v3",
+            "app_version": "The-TG-Bot v3",
             "lang_code": "en",
             **kwargs
         }
 
-        self.tgbot = None
+        self.bot = None
+        if self.env.BOT_TOKEN:
+            app_id = self.env.APP_ID
+            api_hash = self.env.API_HASH
+            token = self.env.BOT_TOKEN
+            self.bot = TelegramClient("bot", app_id, api_hash).start(bot_token=token)
+        
         super().__init__(session, **kwargs)
         self._event_builders = Reverse()
         self.loop.run_until_complete(self._async_init(bot_token=bot_token))
@@ -86,6 +92,8 @@ class Userbot(TelegramClient):
         mod = importlib.util.module_from_spec(spec)
         mod.events = _events
         mod.client = self
+        if self.bot is not None:
+            mod.bot = self.bot
         mod.humanbytes = humanbytes
         mod.progress = progress
         mod.time_formatter = time_formatter

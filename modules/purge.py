@@ -2,7 +2,7 @@
 # Syntax (.purge as a reply to a msg)
 
 import asyncio
-
+from telethon.tl.functions.users import GetFullUserRequest
 
 
 @client.on(events("purge ?(.*)"))
@@ -16,8 +16,11 @@ async def purge(event):
         from_user = None
         input_str = event.pattern_match.group(1)
         if input_str:
-            from_user = await client.get_entity(input_str)
-            logger.info(from_user)
+            try:
+                input_str = int(input_str)
+            except:
+                pass
+            from_user = await client(GetFullUserRequest(input_str))
         async for message in client.iter_messages(
             event.chat_id,
             min_id=event.reply_to_msg_id,
@@ -28,7 +31,7 @@ async def purge(event):
             if len(msgs) == 100:
                 await client.delete_messages(event.chat_id, msgs)
                 msgs = []
-        msgs.append(reply)        
+        msgs.append(reply)     
         if len(msgs) <= 100:
             await client.delete_messages(event.chat_id, msgs)
             msgs = []
@@ -37,9 +40,7 @@ async def purge(event):
             await event.edit("**PURGE** Failed!")
 
 
-ENV.HELPER.update({
-    "purge": "\
-```.purge (as a reply to a msg)```\
+ENV.HELPER.update({"purge": "\
+`.purge (as a reply to a msg) <user (optional)>`\
 \nUsage: Purge all msgs until the target message.\
-"
-})
+"})

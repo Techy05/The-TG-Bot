@@ -11,7 +11,7 @@ client.storage.LastTrigger = {} # spam protection
 async def filter(event):
     filters = get_filter(event.chat_id)
     for term in filters:
-        if term.trigger in event.message.lower() and not last_used(term.trigger):
+        if term.trigger in event.raw_text.lower() and not last_used(term.trigger):
             media = await client.get_messages(ENV.LOGGER_GROUP, ids=int(term.file)) if term.file else None
             await event.reply(
                 term.content, 

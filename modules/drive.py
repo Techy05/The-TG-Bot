@@ -77,6 +77,7 @@ async def handler(event):
                 ms = (end - start).seconds
                 file_path = downloaded_file_name
                 await event.edit(f"Downloaded file to `{file_path}` in {ms} seconds.")
+                await asyncio.sleep(2)
         elif (reply.media is None or "WebPageEmpty" in str(reply.media)) and "http" in reply.message:
             for term in reply.message.split():
                 if term.lower().startswith("http"):
@@ -89,6 +90,7 @@ async def handler(event):
                 file_path = output
             end = datetime.now()
             await event.edit(f"Downloaded file to `{output}` in {(end - start).seconds} seconds.")
+            await asyncio.sleep(2)
         else:
             await event.edit("`Like I care.`")
             return False
@@ -108,6 +110,7 @@ async def handler(event):
                 file_path = output
             end = datetime.now()
             await event.edit(f"Downloaded file to `{output}` in {(end - start).seconds} seconds.")
+            await asyncio.sleep(2)
         else:
             await event.edit("404: File not found!")
             return False

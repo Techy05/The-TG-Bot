@@ -8,7 +8,7 @@ LOCATION = ["Mercury", "Venus", "Mars", "Jupiter", "Uranus",
             "Saturn", "Netune", "Pluto", "Titan", "Europa", 
             "Callisto", "Ganymede", "Luna", "Eris", "Ceres"]
             
-@client.on(events(pattern="log ?(.*)"))
+@client.on(events(pattern="log$"))
 async def handler(event):
     if event.fwd_from:
         return

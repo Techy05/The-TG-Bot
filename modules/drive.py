@@ -10,15 +10,14 @@ import time
 import asyncio
 import requests
 
-from shutil import copyfileobj
 from datetime import datetime
+from pySmartDL import SmartDL
 from mimetypes import guess_type
 
 from oauth2client.file import Storage
 from oauth2client.client import OAuth2WebServerFlow
 from apiclient.discovery import build
 from apiclient.http import MediaFileUpload
-from apiclient.errors import ResumableUploadError
 
 
 token_file = ENV.DOWNLOAD_DIRECTORY.rstrip("/") + "/auth_token.txt"
@@ -33,7 +32,7 @@ async def handler(event):
     if event.fwd_from:
         return
     if CLIENT_ID is None or CLIENT_SECRET is None:
-        await event.edit("This module requires credentials from https://da.gd/so63O. Aborting!\nVisit da.gd/drive for more info.")
+        await event.edit("This module requires credentials from https://da.gd/so63O. Aborting!\nVisit https://da.gd/drive for more info.")
         return
     if ENV.LOGGER_GROUP is None:
         await event.edit("Please set the required environment variable `LOGGER_GROUP` for this plugin to work.")
@@ -49,7 +48,7 @@ async def handler(event):
         await event.edit("Please goto your `LOGGER GROUP` and complete the setup")
         credentials = await new_token(token_file)
     
-    input_str = event.pattern_match.group(1).split('-shared')[0].strip()
+    input_str = event.pattern_match.group(1).replace('-shared', '').strip()
     reply = await event.get_reply_message()
     use_shared = True if '-shared' in event.text else False
     t_start = datetime.now()
@@ -57,7 +56,7 @@ async def handler(event):
     # Getting the file ready to upload
     file_path = None
     if reply:
-        if reply.media is not None and "WebPageEmpty" not in str(reply.media):
+        if reply.media is not None and "WebPage" not in str(reply.media):
             await event.edit("Starting download..")
             try:
                 start = datetime.now()
@@ -78,18 +77,14 @@ async def handler(event):
                 file_path = downloaded_file_name
                 await event.edit(f"Downloaded file to `{file_path}` in {ms} seconds.")
                 await asyncio.sleep(2)
-        elif (reply.media is None or "WebPageEmpty" in str(reply.media)) and "http" in reply.message:
-            for term in reply.message.split():
-                if term.lower().startswith("http"):
-                    url = term
-            start = datetime.now()
-            output = await download_url(event, url)
-            if output is None:
-                return
+        elif (reply.media is None or "WebPage" in str(reply.media)) and "http" in reply.message:
+            url = [term.strip() for term in reply.message.split() if term.lower().startswith("http")][0]
+            await event.edit("`Getting URL info..`")
+            fpath = await download_url(event, url)
+            if fpath is None:
+                return False
             else:
-                file_path = output
-            end = datetime.now()
-            await event.edit(f"Downloaded file to `{output}` in {(end - start).seconds} seconds.")
+                file_path = fpath
             await asyncio.sleep(2)
         else:
             await event.edit("`Like I care.`")
@@ -98,18 +93,13 @@ async def handler(event):
         if os.path.exists(input_str):
             file_path = input_str
         elif "http" in input_str:
-            for term in input_str.split():
-                if term.lower().startswith("http"):
-                    url = term
+            url = [term.strip() for term in input_str.split() if term.lower().startswith("http")][0]
             await event.edit("`Getting url info..`")
-            start = datetime.now()
-            output = await download_url(event, url)
-            if output is None:
-                return
+            fpath = await download_url(event, url)
+            if fpath is None:
+                return False
             else:
-                file_path = output
-            end = datetime.now()
-            await event.edit(f"Downloaded file to `{output}` in {(end - start).seconds} seconds.")
+                file_path = fpath
             await asyncio.sleep(2)
         else:
             await event.edit("404: File not found!")
@@ -126,16 +116,15 @@ async def handler(event):
         else:
             parent = find_folder(drive_service, "The-TG-Bot")
         try:
-            gdrive_link = await upload_file(drive_service, file_path, file_name, mime_type, parent.get('id'), event)
+            gdrive = await upload_file(drive_service, file_path, file_name, mime_type, parent.get('id'), event)
             t_end = datetime.now()
-            await event.edit(f"File sucessfully uploaded to {parent.get('name')} in {(t_end - t_start).seconds} seconds.\n\n**Download link:**\n[{file_name}]({gdrive_link})")
+            await event.edit(f"File sucessfully uploaded to {parent.get('name')} in {(t_end - t_start).seconds} seconds.\n\n**Download link:**\n[{file_name}]({gdrive[0]}) [{humanbytes(gdrive[1])}]")
         except Exception as e:
             await event.edit(f"Oh snap looks like something went wrong:\n{e}")
     else:
         await event.edit("404: File not found.")
 
 
-# Get mime type and name of given file
 def file_info(file_path):
     mime_type = guess_type(file_path)[0]
     mime_type = mime_type if mime_type else "text/plain"
@@ -144,33 +133,36 @@ def file_info(file_path):
 
 
 async def download_url(event, url):
-    try: 
-        r = requests.get(url, stream=True, timeout=20)
-    except: 
-        await event.edit("`Invalid URL`")
+    try:
+        r = requests.get(url, stream=True, timeout=15)
+        url = r.url
+    except:
+        await event.edit("`Invalid URL!`")
         return None
+    start = datetime.now()
+    fname = os.path.basename(url)
+    fpath = os.path.join(ENV.DOWNLOAD_DIRECTORY, fname)
+    Download = SmartDL(url, fpath, progress_bar=False, threads=1)
+    size = int(r.headers['content-length'])
+    interval = 1.5 if size < 360000000 else 5
+    size = humanbytes(size) if size else "0.00 MiB"
+    status = f"**Downloading file to local..**\n\n**File Name:** `{fname}`\n"
+    await event.edit(status + f"**Size:** `{size}`")
+    Download.start(blocking=False)
+    while not Download.isFinished():
+        progress = humanbytes(Download.get_dl_size()) if Download.get_dl_size() else "0.00 MiB"
+        percentage = Download.get_progress() * 100
+        new_msg = status + f"**Downloaded:** {progress} of {size} [{round(percentage, 2)}%]"
+        if new_msg != event.text:
+            await event.edit(new_msg)
+        await asyncio.sleep(interval)
+    end = datetime.now()
+    if Download.isSuccessful():
+        await event.edit(f"**Downloaded {size} file in {(end - start).seconds} seconds.**\n\n`{fpath}`")
+        return fpath
     else:
-        try:
-            fname = r.url.split("/")[-1].split("=")[-1]
-            size = float(r.headers["content-length"]) / 1024 / 1024
-            # Limit max decimal places to 3
-            size = str(size)[:5].strip(".") if len(str(size)) > 4 else str(size) 
-        except:
-            fname = "unknown_file." + fname.split('.')[-1].split('/')[0]
-            size = "?"
-            await event.edit("`WARNING: This file may not download properly`")
-            await asyncio.sleep(2)
-        
-        fpath = ENV.DOWNLOAD_DIRECTORY.rstrip("/") + "/" + fname
-        await event.edit(f"Downloading `{fname}` [{size} MB] to local..")
-        try:
-            with open(fpath, "wb") as f:
-                copyfileobj(r.raw, f)
-        except Exception as e:
-            await event.edit(f"Whoops! Error:\n\n {str(e)}")
-            return None
-        else:
-            return fpath
+        await event.edit(f"`Failed to download {fname} [{size}]`!")
+        return None
             
 
 async def upload_file(service, file_path, file_name, mime_type, parent, event):
@@ -187,7 +179,7 @@ async def upload_file(service, file_path, file_name, mime_type, parent, event):
         "allowFileDiscovery": True,
         "permissionDetails[].role": "reader"
     }
-    await event.edit(f"Uploading to GDrive\nFile Name: `{file_name}`")
+    await event.edit(f"**Uploading to GDrive**\nFile Name: `{file_name}`")
     
     file = service.files().create(body=file_metadata, 
                                   media_body=media,
@@ -196,16 +188,17 @@ async def upload_file(service, file_path, file_name, mime_type, parent, event):
     
     file_id = file.get('id')
     service.permissions().create(fileId=file_id, supportsAllDrives=True, body=permissions).execute()
-    file = service.files().get(fileId=file_id, supportsAllDrives=True, fields='webContentLink').execute()
+    file = service.files().get(fileId=file_id, supportsAllDrives=True, fields='webContentLink, size').execute()
     download_url = file.get('webContentLink')
-    return download_url
+    size = file.get('size')
+    return [download_url, int(size)]
 
 
 def shared_drive(service):
     response = service.drives().list(fields='drives(id, name)').execute()
     drives = response.get('drives', [])
     if drives: 
-        return drives[0]  # Return the most recent drive
+        return drives[0]  # Use the most recent drive
     else: 
         return None
         
@@ -269,11 +262,11 @@ async def new_token(token_file):
 ENV.HELPER.update({
     "drive": "\
 `.drive (reply to a file or a message containing download link)`\
-\nUsage: Upload a file on telegram to your google drive.\
-\n\n`.drive (file location/download link)`\
+\nUsage: Upload a file from telegram to your google drive.\
+\n\n`.drive [path/url]`\
 \nUsage: Downloads a file from url to storage and uploads it to drive.\
 \n\nOptional argument: `-shared` to upload the file in shared drive.\
-\nExample:  `.drive <input/reply> -shared`\
+\nExample:  `.drive [path/url/reply] -shared`\
 \n\n\nYou need `DRIVE_CLIENT_ID` and `DRIVE_CLIENT_SECRET` env variables for this to work.\
 \nGet the client id and secret from https://console.developers.google.com/\
 \nVisit https://da.gd/drive for more info.\

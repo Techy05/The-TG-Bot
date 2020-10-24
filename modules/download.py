@@ -42,13 +42,12 @@ async def handler(event):
             await mone.edit("Downloaded to `{}` in {} seconds.".format(downloaded_file_name, ms))
     elif input_str:
         start = datetime.now()
-        url = input_str
+        url = input_str.split("|")[0].strip()
+        url = requests.get(url, stream=True, timeout=15).url  # Allow redirects
         file_name = os.path.basename(url)
-        to_download_directory = ENV.DOWNLOAD_DIRECTORY
         if "|" in input_str:
-            url, file_name = input_str.split("|")
-        url = url.strip()
-        file_name = file_name.strip()
+            file_name = input_str.split("|")[1].strip()
+        to_download_directory = ENV.DOWNLOAD_DIRECTORY
         downloaded_file_name = os.path.join(to_download_directory, file_name)
         downloader = SmartDL(url, downloaded_file_name, progress_bar=False)
         downloader.start(blocking=False)

@@ -18,6 +18,7 @@ from oauth2client.file import Storage
 from oauth2client.client import OAuth2WebServerFlow
 from apiclient.discovery import build
 from apiclient.http import MediaFileUpload
+from telethon.errors.rpcerrorlist import MessageNotModifiedError
 
 
 token_file = ENV.DOWNLOAD_DIRECTORY.rstrip("/") + "/auth_token.txt"
@@ -118,7 +119,7 @@ async def handler(event):
         try:
             gdrive = await upload_file(drive_service, file_path, file_name, mime_type, parent.get('id'), event)
             t_end = datetime.now()
-            await event.edit(f"File sucessfully uploaded to {parent.get('name')} in {(t_end - t_start).seconds} seconds.\n\n**Download link:**\n[{file_name}]({gdrive[0]}) [{humanbytes(gdrive[1])}]")
+            await event.edit(f"File sucessfully uploaded to {parent.get('name')} in {(t_end - t_start).seconds} seconds.\n\n**Download link:**\n[{file_name}]({gdrive[0]})  [`{humanbytes(gdrive[1])}`]")
         except Exception as e:
             await event.edit(f"Oh snap looks like something went wrong:\n{e}")
     else:
@@ -134,27 +135,29 @@ def file_info(file_path):
 
 async def download_url(event, url):
     try:
-        r = requests.get(url, stream=True, timeout=15)
+        r = requests.get(url, stream=True, timeout=10)
         url = r.url
     except:
         await event.edit("`Invalid URL!`")
         return None
     start = datetime.now()
+    Download = SmartDL(url, ENV.DOWNLOAD_DIRECTORY, threads=1, progress_bar=False)
     fname = os.path.basename(url)
-    fpath = os.path.join(ENV.DOWNLOAD_DIRECTORY, fname)
-    Download = SmartDL(url, fpath, progress_bar=False, threads=1)
-    size = int(r.headers['content-length'])
-    interval = 1.5 if size < 360000000 else 5
-    size = humanbytes(size) if size else "0.00 MiB"
+    fpath = Download.get_dest()
+    size_bytes = int(r.headers['content-length'])
+    size = humanbytes(size_bytes) if size_bytes else "0.00 MiB"
+    interval = 1.5 if size_bytes < 350*1024*1024 else 5
     status = f"**Downloading file to local..**\n\n**File Name:** `{fname}`\n"
     await event.edit(status + f"**Size:** `{size}`")
     Download.start(blocking=False)
     while not Download.isFinished():
         progress = humanbytes(Download.get_dl_size()) if Download.get_dl_size() else "0.00 MiB"
         percentage = Download.get_progress() * 100
-        new_msg = status + f"**Downloaded:** {progress} of {size} [{round(percentage, 2)}%]"
-        if new_msg != event.text:
+        new_msg = status + f"**Downloaded:**\n`{progress}`  of  `{size}`  [{round(percentage, 1)}%]"
+        try:
             await event.edit(new_msg)
+        except MessageNotModifiedError:
+            continue
         await asyncio.sleep(interval)
     end = datetime.now()
     if Download.isSuccessful():

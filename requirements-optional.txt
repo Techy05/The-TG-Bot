@@ -2,7 +2,8 @@ lxml
 psycopg2
 bs4
 aria2p
-googletrans
+goslate
+cryptg
 hachoir
 emoji
 Pillow
@@ -15,6 +16,7 @@ sqlalchemy
 asyncurban
 oauth2client
 google-api-python-client
+google_images_download
 httplib2==0.15.0
 pygit
 coffeehouse

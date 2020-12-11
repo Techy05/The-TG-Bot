@@ -1,2 +1,2 @@
-telethon==1.14.0
+telethon==1.16.1
 -r ./requirements-optional.txt

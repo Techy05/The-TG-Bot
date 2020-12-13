@@ -15,9 +15,9 @@ THETGBOT_USER_BOT_WARN_ZERO = "`Blocked! Thanks for the spam.`"
 THETGBOT_USER_BOT_NO_WARN = "\
 `Bleep blop! This is a bot. Don't fret.\
 \nMy master hasn't approved you to PM.`\
-\n__Please wait for my master to look in, he mostly approves PMs.\
-As far as I know, he doesn't usually approve retards though.\
-If you continue sending messages you will be blocked.__\
+\n`Please wait for my master to look in, he mostly approves PMs.\
+As far as I know, he doesn't usually approve retards though.`\
+`If you continue sending messages you will be blocked.`\
 "
 
 EXCEPTIONS = [777000, 1017305299, 1109396517]

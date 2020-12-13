@@ -3,9 +3,11 @@
 
 from modules.sql.blacklist_sql import get_bl, add_bl, rm_bl, rmrf_bl
 from telethon.tl.functions.channels import GetParticipantRequest
+from telethon.events import MessageEdited
 from telethon.tl.types import ChannelParticipantAdmin, ChannelParticipantCreator
 
 
+@client.on(MessageEdited(incoming=True))
 @client.on(events(incoming=True))
 async def blacklist(event):
     if await admin(event):

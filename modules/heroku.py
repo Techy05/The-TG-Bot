@@ -1,6 +1,7 @@
 # For The-TG-Bot
 
 import os
+import sys
 import heroku3
 
 api_key = ENV.HEROKU_API_KEY
@@ -47,10 +48,10 @@ async def env_variables(event):
     elif command == "set":
         configs = {}
         message = ""
-        # SYNTAX: key value ; key value ; key value ; etc.
-        for config in args.split(";"):
+        # key value ;; key value ;; key value ;; etc.
+        for config in args.split(";;"):
             key = config.strip().split()[0]
-            value = config.strip().split()[1]
+            value = config.strip().split(maxsplit=1)[1]
             configs.update({key: value})
             message += f"Key: `{key}`\nValue: `{value}`\n\n"
         env.update(configs)
@@ -69,7 +70,7 @@ async def heroku_logs(event):
         try: lines = int(args)
         except: return await event.edit("`Count must be an integer`")
     else:
-        lines = 1500
+        lines = 100
     logs = heroku.apps()[app_name].get_log(lines=lines, timeout=10)
     with open(f"{app_name}_logs.txt", "w") as f:
         f.write(logs)

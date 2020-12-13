@@ -111,15 +111,8 @@ async def handler(event):
     
     for _ in range(n):
         insult = random.choice(insult_strings) if not type == "hard" else destroy_respect()
-        reply = await event.get_reply_message()
-        if reply.from_id in ENV.SUDO_USERS:
-            await event.edit("**Wait! WHAT?!\nDid you just try to insult my creator?!?!\nBYE!**")
-            sys.exit()
-            # probably not needed but meh
-            break
-        else:
-            await event.edit(f"`{insult}`")
-            time.sleep(2)
+        await event.edit(f"`{insult}`")
+        time.sleep(2)
 
 
 ENV.HELPER.update({"insult": "\

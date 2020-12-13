@@ -5,9 +5,9 @@
 # For The-TG-Bot v3
 
 import os
-import math
 import time
 import asyncio
+import heroku3
 import requests
 
 from datetime import datetime
@@ -24,63 +24,62 @@ from telethon.errors.rpcerrorlist import MessageNotModifiedError
 token_file = ENV.DOWNLOAD_DIRECTORY.rstrip("/") + "/auth_token.txt"
 CLIENT_ID = ENV.DRIVE_CLIENT_ID
 CLIENT_SECRET = ENV.DRIVE_CLIENT_SECRET
-OAUTH_SCOPE = ["https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive.readonly"]
+OAUTH_SCOPE = ["https://www.googleapis.com/auth/drive"]
 REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"
+PARENT_ID = ENV.DRIVE_PARENT_ID
+INDEX_URL = ENV.INDEX_URL
 
 
-@client.on(events(pattern="drive ?(.*)"))
+# Initialise credentials on boot
+if ENV.DRIVE_AUTH_TOKEN_DATA:
+    if not os.path.exists(token_file):
+        with open(token_file, "w") as f:
+            f.write(ENV.DRIVE_AUTH_TOKEN_DATA)
+    credentials = Storage(token_file).get()
+else:
+    credentials = None
+
+
+@client.on(events(pattern="drive ?(.*)", forwards=False))
 async def handler(event):
-    if event.fwd_from:
-        return
     if CLIENT_ID is None or CLIENT_SECRET is None:
-        await event.edit("This module requires credentials from https://da.gd/so63O. Aborting!\nVisit https://da.gd/drive for more info.")
-        return
+        return await event.edit("This module requires credentials from https://da.gd/so63O. Aborting!\nVisit https://da.gd/drive for more info.")
     if ENV.LOGGER_GROUP is None:
-        await event.edit("Please set the required environment variable `LOGGER_GROUP` for this plugin to work.")
-        return
-
-    # Initialise credentials
-    if ENV.DRIVE_AUTH_TOKEN_DATA is not None:
-        if not os.path.exists(token_file):
-            with open(token_file, "w") as f:
-                f.write(ENV.DRIVE_AUTH_TOKEN_DATA)
-        credentials = Storage(token_file).get()
-    else:
+        return await event.edit("Please set the required environment variable `LOGGER_GROUP` for this plugin to work.")
+    if credentials is None:
         await event.edit("Please goto your `LOGGER GROUP` and complete the setup")
-        credentials = await new_token(token_file)
-    
-    input_str = event.pattern_match.group(1).replace('-shared', '').strip()
+        return await new_token(token_file)
+
+    input_str = event.pattern_match.group(1).split()
     reply = await event.get_reply_message()
-    use_shared = True if '-shared' in event.text else False
     t_start = datetime.now()
-    
-    # Getting the file ready to upload
-    file_path = None
+
+    # Downloading the file on server
+    file_path, directory = None, None
     if reply:
-        if reply.media is not None and "WebPage" not in str(reply.media):
+        if reply.media and "WebPage" not in str(reply.media):
             await event.edit("Starting download..")
             try:
                 start = datetime.now()
                 c_time = time.time()
                 downloaded_file_name = await client.download_media(
-                    reply,
+                    reply.media,
                     ENV.DOWNLOAD_DIRECTORY,
                     progress_callback=lambda d, t: asyncio.get_event_loop().create_task(
-                        progress(d, t, event, c_time, "**Downloading to Local**\n")
+                        progress(d, t, event, c_time, "**Downloading**\n")
                     )
                 )
             except Exception as e:
-                await event.edit(str(e))
-                return False
+                return await event.edit(str(e))
             else:
                 end = datetime.now()
                 ms = (end - start).seconds
                 file_path = downloaded_file_name
                 await event.edit(f"Downloaded file to `{file_path}` in {ms} seconds.")
                 await asyncio.sleep(2)
-        elif (reply.media is None or "WebPage" in str(reply.media)) and "http" in reply.message:
+        elif "http" in reply.message:
             url = [term.strip() for term in reply.message.split() if term.lower().startswith("http")][0]
-            await event.edit("`Getting URL info..`")
+            await event.edit("`Starting download`")
             fpath = await download_url(event, url)
             if fpath is None:
                 return False
@@ -88,14 +87,16 @@ async def handler(event):
                 file_path = fpath
             await asyncio.sleep(2)
         else:
-            await event.edit("`Like I care.`")
-            return False
+            await event.edit("`Nothing to download in replied message`")
     elif input_str:
-        if os.path.exists(input_str):
-            file_path = input_str
-        elif "http" in input_str:
-            url = [term.strip() for term in input_str.split() if term.lower().startswith("http")][0]
-            await event.edit("`Getting url info..`")
+        path = input_str[0]
+        if os.path.isfile(path):
+            file_path = path
+        elif os.path.isdir(path):
+            directory = path
+        elif "http" in input_str[0]:
+            url = input_str[0]
+            await event.edit("`Starting download`")
             fpath = await download_url(event, url)
             if fpath is None:
                 return False
@@ -103,27 +104,112 @@ async def handler(event):
                 file_path = fpath
             await asyncio.sleep(2)
         else:
-            await event.edit("404: File not found!")
-            return False
-    
-    # Uploading the file to drive
+            return await event.edit("404: File not found!")
+    else:
+        return False
+
+    drive_service = build("drive", "v3", credentials=credentials, cache_discovery=False)
+    if "shared" in input_str:
+        parent = shared_drive(drive_service)
+        if parent is None:
+            return await event.edit("No shared drive found!\n`Aborting..`")
+    elif len(input_str) == 1 and "http" not in str(input_str):  # workaround 
+        folder = input_str[0].split("/")[-1]
+        parent = find_folder(drive_service, folder)
+    elif len(input_str) > 1:
+        folder = input_str[-1].split("/")[-1]
+        parent = find_folder(drive_service, folder)
+    elif PARENT_ID:
+        parent = {"name": "drive", "id": PARENT_ID}
+    else:
+        parent = find_folder(drive_service, "The-TG-Bot")
+            
+    # Uploading
     if file_path:
         file_name, mime_type = file_info(file_path)
-        drive_service = build("drive", "v3", credentials=credentials, cache_discovery=False)
-        if use_shared is True:
-            parent = shared_drive(drive_service)
-            if parent is None:
-                return await event.edit("No shared drive found!\n`Aborting..`")
-        else:
-            parent = find_folder(drive_service, "The-TG-Bot")
         try:
-            gdrive = await upload_file(drive_service, file_path, file_name, mime_type, parent.get('id'), event)
+            await event.edit(f"Uploading to GDrive\nFile Name: `{file_name}`")
+            drive_link = await upload_file(drive_service, file_path, file_name, mime_type, parent.get('id'), event)
             t_end = datetime.now()
-            await event.edit(f"File sucessfully uploaded to {parent.get('name')} in {(t_end - t_start).seconds} seconds.\n\n**Download link:**\n[{file_name}]({gdrive[0]})  [`{humanbytes(gdrive[1])}`]")
+            await event.edit(f"File sucessfully uploaded to {parent.get('name')} in {(t_end - t_start).seconds} seconds.\n\n{drive_link}", parse_mode="html")
         except Exception as e:
-            await event.edit(f"Oh snap looks like something went wrong:\n{e}")
+            await event.edit(f"**Oh snap looks like something went wrong:**\n\n`{e}`")
+    elif directory:
+        batch = []
+        size = 0
+        await event.edit("`Preparing a list of files..`")
+        for dir, subdir, files in os.walk(directory):
+            for file in files:
+                batch.append(os.path.join(dir, file))
+                size += os.path.getsize(os.path.join(dir, file))
+        await event.edit(f"Uploading directory [{humanbytes(size)}]\n\nTotal files: {len(batch)}")
+        await asyncio.sleep(2)
+        uploaded = 0
+        error = 0
+        for file_path in sorted(batch):
+            file_name, mime_type = file_info(file_path)
+            try:
+                drive_link = await upload_file(drive_service, file_path, file_name, mime_type, parent.get('id'), event)
+                await event.edit(f"Uploading directory [{humanbytes(size)}]\n\n`Total files: {len(batch)}\nFiles uploaded: {uploaded}`\n\nUploading: {file_name}")
+                os.remove(file_path)
+                uploaded += 1           
+            except Exception as e:
+                error += 1
+                with open("error_log.txt", "a") as er:
+                    er.write(f"\n\n\n<< {str(error)} >>\n{str(e)}")
+            await asyncio.sleep(1 if size < 100*1024*1024 else 5)
+        t_end = datetime.now()
+        file = "error_log.txt" if error > 0 else None
+        await event.reply(
+            f"Uploaded directory **{directory}** to drive in {(t_end - t_start).seconds} seconds\n" +
+            f"\n`Files uploaded: {uploaded}\nErrors: {error}`\n" +
+            f"\n[Drive Link](https://drive.google.com/drive/u/0/folders/{parent.get('id')})" +
+            f" | [Index Link]({INDEX_URL}/{directory.split('/')[-1]})" if PARENT_ID and INDEX_URL else "" +
+            f"  [`{humanbytes(size)}`]",
+            file=file,
+            silent=True)
+        await event.delete()
     else:
         await event.edit("404: File not found.")
+
+
+@client.on(events(pattern="copy +(.*)", forwards=False))
+async def copy(event):
+    if CLIENT_ID is None or CLIENT_SECRET is None:
+        return await event.edit("This module requires credentials from https://da.gd/so63O. Aborting!\nVisit https://da.gd/drive for more info.")
+    if ENV.LOGGER_GROUP is None:
+        return await event.edit("Please set the required environment variable `LOGGER_GROUP` for this plugin to work.")
+    if credentials is None:
+        await event.edit("Please goto your `LOGGER GROUP` and complete the setup")
+        return await new_token(token_file)
+    
+    input_str = event.pattern_match.group(1)
+    if not "drive.google.com" in input_str:
+        return await event.edit("`Provide a google drive link`")
+    for term in input_str.split()[0].split("/"):
+        if len(term) > 25:
+            file_id = term.replace("uc?id=", "").replace("&export=download", "")
+    
+    drive_service = build("drive", "v3", credentials=credentials, cache_discovery=False)
+    if "shared" in input_str:
+        parent = shared_drive(drive_service)
+        if parent is None:
+            return await event.edit("No shared drive found!\n`Aborting..`")
+    elif len(input_str) == 1 and "http" not in str(input_str):  # workaround 
+        folder = input_str[0].split("/")[-1]
+        parent = find_folder(drive_service, folder)
+    elif len(input_str) > 1:
+        folder = input_str[-1].split("/")[-1]
+        parent = find_folder(drive_service, folder)
+    elif PARENT_ID:
+        parent = {"name": "drive", "id": PARENT_ID}
+    else:
+        parent = find_folder(drive_service, "The-TG-Bot")
+    try:
+        msg = copy_file(event, drive_service, file_id, parent.get('id'))
+        await event.edit(f"File successfully copied to {parent.get('name')}\n\n{msg}", parse_mode="html")
+    except Exception as e:
+        await event.edit(f"**Looks like something went wrong:**\n\n`{str(e)}`")
 
 
 def file_info(file_path):
@@ -133,6 +219,102 @@ def file_info(file_path):
     return file_name, mime_type
 
 
+async def upload_file(service, file_path, file_name, mime_type, parent, event):
+    file_metadata = {
+        "name": file_name,
+        "description": "Uploaded using The-TG-Bot",
+        "mimeType": mime_type,
+        "parents": [parent]
+    }
+    media = MediaFileUpload(file_path, mimetype=mime_type, resumable=True)
+    permissions = {
+        "role": "reader",
+        "type": "anyone",
+        "allowFileDiscovery": True,
+        "permissionDetails[].role": "reader"
+    }
+    
+    file = service.files().create(body=file_metadata, 
+                                  media_body=media,
+                                  supportsAllDrives=True,
+                                  fields='id, name, webContentLink, size').execute()
+    file_id = file.get('id')
+    try: service.permissions().create(fileId=file_id, supportsAllDrives=True, body=permissions).execute()
+    except: pass
+    download_url = file.get('webContentLink')
+    size = file.get('size')
+    msg = f"<strong>Download link:</strong>\n<a href=\"{download_url}\">{file.get('name')}</a>  [<code>{humanbytes(int(size))}</code>]"
+    if INDEX_URL and parent == PARENT_ID:
+        index_link = INDEX_URL + "/" + file.get('name')
+        msg += f"  |  <a href=\"{index_link}\">Index link</a>"
+    return msg
+
+
+def copy_file(event, service, file_id, parent):
+    file_metadata = {
+        "parents": [parent]
+    }
+    permissions = {
+        "role": "reader",
+        "type": "anyone",
+        "allowFileDiscovery": True,
+        "permissionDetails[].role": "reader"
+    }
+    file = service.files().copy(fileId=file_id, body=file_metadata, 
+                                supportsAllDrives=True,
+                                fields='id, name, webContentLink, size').execute()
+    service.permissions().create(fileId=file.get('id'), supportsAllDrives=True, body=permissions).execute()
+    download_url = file.get('webContentLink')
+    name = file.get('name')
+    size = int(file.get('size'))
+    msg = f"<strong>Download link:</strong>\n<a href=\"{download_url}\">{name}</a>  [<code>{humanbytes(size)}</code>]"
+    if INDEX_URL and parent == PARENT_ID:
+        index_link = INDEX_URL + "/" + name
+        msg += f"  |  <a href=\"{index_link}\">Index link</a>"
+    return msg
+
+
+def shared_drive(service):
+    response = service.drives().list(fields='drives(id, name)').execute()
+    drives = response.get('drives', [])
+    if drives: 
+        return drives[0]  # Use the first drive
+    else: 
+        return None
+        
+
+def find_folder(service, folder_name):
+    response = service.files().list(q=f"mimeType='application/vnd.google-apps.folder' and name='{folder_name}'",
+                                    supportsAllDrives=True,
+                                    fields='files(id, name)',
+                                    ).execute()
+    if response.get("files"):
+        parent_id = response.get('files')[0].get('id')
+    else:
+        parent_id = create_folder(service, folder_name)
+    parent = {'name': 'My Drive', 'id': parent_id}
+    return parent
+
+
+def create_folder(service, folder_name):
+    file_metadata = {
+        'name': folder_name,
+        'mimeType': 'application/vnd.google-apps.folder'
+    }
+    if PARENT_ID:
+        file_metadata.update({'parents': [PARENT_ID]})
+    permissions = {
+        "role": "reader", 
+        "type": "anyone", 
+        "allowFileDiscovery": True,
+        "permissionDetails[].role": "reader"
+    }
+    folder = service.files().create(body=file_metadata, supportsAllDrives=True, fields='id').execute()
+    parent_id = folder.get('id')
+    service.permissions().create(fileId=parent_id, body=permissions, supportsAllDrives=True).execute()
+    return parent_id
+    
+
 async def download_url(event, url):
     try:
         r = requests.get(url, stream=True, timeout=10)
@@ -141,13 +323,20 @@ async def download_url(event, url):
         await event.edit("`Invalid URL!`")
         return None
     start = datetime.now()
-    Download = SmartDL(url, ENV.DOWNLOAD_DIRECTORY, threads=1, progress_bar=False)
-    fname = os.path.basename(url)
+    download_dir = ENV.DOWNLOAD_DIRECTORY
+    if "github" in url: # Workaround
+        fname = r.headers["content-disposition"].split("name=")[-1]
+        download_dir = os.path.join(download_dir, fname)
+    Download = SmartDL(url, download_dir, threads=1, progress_bar=False)
     fpath = Download.get_dest()
-    size_bytes = int(r.headers['content-length'])
-    size = humanbytes(size_bytes) if size_bytes else "0.00 MiB"
-    interval = 1.5 if size_bytes < 350*1024*1024 else 5
-    status = f"**Downloading file to local..**\n\n**File Name:** `{fname}`\n"
+    fname = os.path.basename(fpath)
+    try: 
+        bsize = int(r.headers['content-length'])
+    except: 
+        bsize = 0
+    size = humanbytes(bsize) if bsize else "?"
+    interval = 1.5 if bsize < 400*1024*1024 else 5
+    status = f"**Downloading..**\n\n**File Name:** `{fname}`\n"
     await event.edit(status + f"**Size:** `{size}`")
     Download.start(blocking=False)
     while not Download.isFinished():
@@ -168,73 +357,6 @@ async def download_url(event, url):
         return None
             
 
-async def upload_file(service, file_path, file_name, mime_type, parent, event):
-    file_metadata = {
-        "name": file_name,
-        "description": "Uploaded using The-TG-Bot",
-        "mimeType": mime_type,
-        "parents": [parent]
-    }
-    media = MediaFileUpload(file_path, mimetype=mime_type, resumable=True)
-    permissions = {
-        "role": "reader",
-        "type": "anyone",
-        "allowFileDiscovery": True,
-        "permissionDetails[].role": "reader"
-    }
-    await event.edit(f"**Uploading to GDrive**\nFile Name: `{file_name}`")
-    
-    file = service.files().create(body=file_metadata, 
-                                  media_body=media,
-                                  supportsAllDrives=True,
-                                  fields='id').execute()
-    
-    file_id = file.get('id')
-    service.permissions().create(fileId=file_id, supportsAllDrives=True, body=permissions).execute()
-    file = service.files().get(fileId=file_id, supportsAllDrives=True, fields='webContentLink, size').execute()
-    download_url = file.get('webContentLink')
-    size = file.get('size')
-    return [download_url, int(size)]
-
-
-def shared_drive(service):
-    response = service.drives().list(fields='drives(id, name)').execute()
-    drives = response.get('drives', [])
-    if drives: 
-        return drives[0]  # Use the most recent drive
-    else: 
-        return None
-        
-
-def find_folder(service, folder_name):
-    response = service.files().list(q=f"mimeType='application/vnd.google-apps.folder' and name='{folder_name}'",
-                                    supportsAllDrives=True,
-                                    fields='files(id, name)',
-                                    ).execute()
-    if response:
-        parent_id = response.get('files')[0].get('id')
-    else:
-        parent_id = create_folder(service, folder_name)
-    parent = {'name': 'My Drive', 'id': parent_id}
-    return parent
-
-
-def create_folder(service, folder_name):
-    file_metadata = {
-        'name': folder_name,
-        'mimeType': 'application/vnd.google-apps.folder'
-    }
-    permissions = {
-        "role": "reader", 
-        "type": "anyone", 
-        "allowFileDiscovery": True,
-    }
-    folder = service.files().create(body=file_metadata, fields='id').execute()
-    parent_id = folder.get('id')
-    service.permissions().create(fileId=parent_id, body=permissions).execute()
-    return parent_id
-    
-
 async def new_token(token_file):
     flow = OAuth2WebServerFlow(
         CLIENT_ID,
@@ -245,32 +367,37 @@ async def new_token(token_file):
     authorize_url = flow.step1_get_authorize_url()
     async with client.conversation(ENV.LOGGER_GROUP) as conv:
         await conv.send_message(f"Go to the following link in your browser and reply the code:\n\n{authorize_url}")
-        response = conv.wait_event(events())
+        response = conv.wait_event(events(func=lambda e: e.chat_id == ENV.LOGGER_GROUP))
         msg = await response
     code = msg.message.message.strip()
     credentials = flow.step2_exchange(code)
     
     # Save the credentials
     Storage(token_file).put(credentials)
-    await client.send_message(
-        ENV.LOGGER_GROUP, 
-        f"Run the below command:\n`.shell cat {token_file}`" + 
-        "\n\nCreate a new var `DRIVE_AUTH_TOKEN_DATA` and paste the output " + 
-        "of command as its value.\nPlease don't share the output with anyone",
-    )
-    return credentials
-
+    if ENV.HEROKU_API_KEY and ENV.TG_APP_NAME:
+        env = heroku3.from_key(ENV.HEROKU_API_KEY).apps()[ENV.TG_APP_NAME].config()
+        with open(token_file, "r") as t:
+            token_str = t.read()
+        env.update({"DRIVE_AUTH_TOKEN_DATA": token_str})
+        await client.send_message(ENV.LOGGER_GROUP, "`Drive credentials have been automatically saved.\nThe-TG-Bot will now restart..`")
+    else:
+        await client.send_message(
+            ENV.LOGGER_GROUP, 
+            f"Run the below command:\n`$cat {token_file}`" + 
+            "\n\nCreate a new var `DRIVE_AUTH_TOKEN_DATA` and paste the output " + 
+            "of command as its value.\nDon't share the output with anyone!")
 
 
 ENV.HELPER.update({
     "drive": "\
-`.drive (reply to a file or a message containing download link)`\
+`.drive [reply -> media/url] [folder]`\
 \nUsage: Upload a file from telegram to your google drive.\
-\n\n`.drive [path/url]`\
+\n\n`.drive [path/url] [folder]`\
 \nUsage: Downloads a file from url to storage and uploads it to drive.\
-\n\nOptional argument: `-shared` to upload the file in shared drive.\
-\nExample:  `.drive [path/url/reply] -shared`\
-\n\n\nYou need `DRIVE_CLIENT_ID` and `DRIVE_CLIENT_SECRET` env variables for this to work.\
+\n\n`.copy [drive url]`\
+\nUsagd: Makes a copy of a file to your drive (or shared drive).\
+\n\nOptional argument: `shared` to upload the file in shared drive.\
+\n\n\nYou need `DRIVE_CLIENT_ID` and `DRIVE_CLIENT_SECRET` env variables for this module to work.\
 \nGet the client id and secret from https://console.developers.google.com/\
 \nVisit https://da.gd/drive for more info.\
 "

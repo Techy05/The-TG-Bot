@@ -17,7 +17,7 @@ async def handler(event):
     if event.fwd_from:
         return
     await event.edit("Hmm, nice code..")
-    cmd = event.text.split(" ", maxsplit=1)[1]
+    cmd = event.text.split(" ", maxsplit=1)[1].strip(" `")
     reply_to_id = event.message.id
     if event.reply_to_msg_id:
         reply_to_id = event.reply_to_msg_id

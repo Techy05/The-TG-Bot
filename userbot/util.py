@@ -23,7 +23,7 @@ def sync(self, func, *args, **kwargs):
     return asyncio.get_event_loop().create_task(func(*args, **kwargs))
 
 
-def _events(pattern=None, allow_sudo=False, incoming=False, forwards=False, func=None, **args):
+def _events(pattern=None, allow_sudo=False, incoming=False, forwards=False, no_handler=False, func=None, **args):
     """
     Simpler function to handle events without having to import telethon.events
     and also enables command_handler functionality
@@ -32,7 +32,7 @@ def _events(pattern=None, allow_sudo=False, incoming=False, forwards=False, func
     if func is not None:
         args["func"] = func
     if pattern is not None:
-        args["pattern"] = re.compile(ENV.COMMAND_HANDLER + pattern)
+        args["pattern"] = pattern if no_handler else re.compile(ENV.COMMAND_HANDLER + pattern)
     if forwards is True:
         args["forwards"] = None
     else:
@@ -78,7 +78,7 @@ async def progress(current, total, event, start, type_of_ps):
         speed = current / diff
         elapsed_time = round(diff) * 1000
         time_to_completion = round((total - current) / speed) * 1000
-        estimated_total_time = elapsed_time + time_to_completion
+        estimated_total_time = time_to_completion
         progress_str = "[{0}{1}]\nPercent: {2}%\n".format(
             ''.join(["█" for i in range(math.floor(percentage / 5))]),
             ''.join(["░" for i in range(20 - math.floor(percentage / 5))]),
